@@ -1,0 +1,122 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Atelier — Flutter .gitignore
+#  Mac / Windows 両対応
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# ───────────────────────────────────────
+# Flutter / Dart
+# ───────────────────────────────────────
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+flutter_*.png
+pubspec.lock        # チーム開発時はコメントアウトして共有推奨
+
+# ───────────────────────────────────────
+# IDE — VS Code
+# ───────────────────────────────────────
+.vscode/
+!.vscode/extensions.json   # 推奨拡張だけ共有したい場合はこの行を残す
+
+# ───────────────────────────────────────
+# IDE — IntelliJ / Android Studio
+# ───────────────────────────────────────
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# ───────────────────────────────────────
+# macOS
+# ───────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+*.dmg
+
+# ───────────────────────────────────────
+# Windows
+# ───────────────────────────────────────
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ───────────────────────────────────────
+# Claude Code
+# ───────────────────────────────────────
+CLAUDE.local.md     # 個人設定（端末ごとに異なるため除外）
+.claude/memory/     # Auto Memory はローカルに留める
+
+# ───────────────────────────────────────
+# プラットフォーム別ビルド成果物
+# ───────────────────────────────────────
+
+# Android
+**/android/local.properties
+**/android/.gradle/
+**/android/captures/
+**/android/key.properties
+*.keystore
+*.jks
+
+# iOS / macOS
+**/ios/Pods/
+**/macos/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/app.flx
+**/ios/Flutter/app.zip
+**/ios/Flutter/flutter_assets/
+**/ios/ServiceDefinitions.json
+**/ios/Runner/GeneratedPluginRegistrant.*
+*.xcworkspace
+!default.xcworkspace
+xcuserdata/
+
+# Windows
+**/windows/flutter/generated_plugin_registrant.cc
+**/windows/flutter/generated_plugin_registrant.h
+**/windows/flutter/generated_plugins.cmake
+
+# Linux
+**/linux/flutter/generated_plugin_registrant.cc
+**/linux/flutter/generated_plugin_registrant.h
+**/linux/flutter/generated_plugins.cmake
+
+# Web
+**/web/flutter_service_worker.js
+
+# ───────────────────────────────────────
+# 環境変数・シークレット
+# ───────────────────────────────────────
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.p8
+*.p12
+
+# ───────────────────────────────────────
+# ログ・一時ファイル
+# ───────────────────────────────────────
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
