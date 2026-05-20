@@ -11,7 +11,7 @@
 Flutter製。Mac / Windows / iOS対応。iCloud Driveで同期。  
 将来的には一般ノート機能も拡張し、Obsidianを置き換えうる個人知識管理アプリを目指す。
 
-全体設計の詳細 → @DESIGN.md（このファイルと同じフォルダ）
+全体設計の詳細 → @DESIGN.md
 
 ---
 
