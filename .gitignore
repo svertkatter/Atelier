@@ -14,7 +14,7 @@
 .pub/
 build/
 flutter_*.png
-pubspec.lock        # チーム開発時はコメントアウトして共有推奨
+# pubspec.lock はアプリなのでコミットする（再現可能ビルドのため）
 
 # ───────────────────────────────────────
 # IDE — VS Code
@@ -83,6 +83,8 @@ CLAUDE.local.md     # 個人設定（端末ごとに異なるため除外）
 **/ios/Flutter/flutter_assets/
 **/ios/ServiceDefinitions.json
 **/ios/Runner/GeneratedPluginRegistrant.*
+**/macos/Flutter/GeneratedPluginRegistrant.swift
+**/macos/Flutter/ephemeral/
 *.xcworkspace
 !default.xcworkspace
 xcuserdata/

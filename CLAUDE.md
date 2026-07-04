@@ -119,7 +119,7 @@ Application Support/Atelier/
 Atelier/
 ├── styles/          ← .csl ファイル
 ├── library/
-│   └── {id}/
+│   └── {id}/        ← フォルダ名 = citation key（csl_json.id。例：tanaka2024）
 │       ├── paper.pdf
 │       └── meta.md  ← YAML frontmatter に CSL-JSON を含む
 └── projects/
@@ -148,12 +148,15 @@ iOS           : localhostにLLMは無い → LAN内PCのIP:ポート指定 or �
 
 ```
 @キーワード入力 → vault.sqlite から候補検索 → インライン引用チップ表示
+draft.md への保存形式：pandoc標準の [@citation-key]（例：[@tanaka2024]）。これが正本
 出力時：meta.md の frontmatter から refs.json を生成（YAML→JSON 変換のみ）
-       pandoc draft.md --bibliography=refs.json --csl=styles/{name}.csl -o output.docx
+       pandoc draft.md --citeproc --bibliography=refs.json --csl=styles/{name}.csl -o output.docx
 ```
 
+- **`--citeproc` は必須**（pandoc 2.11+。これがないと引用が解決されない）
 - CSLスタイルの処理はすべてpandocに委譲。Dart側に引用ロジックを書かない
 - YAML→JSON 変換器は「データ変換」であり引用ロジックではない（実装してよい）
+  - YAML 1.1 の暗黙型変換（`no`→false 等）に注意。文字列は明示的に扱うこと
 - **出力は docx を先行実装**。PDF出力は LaTeX エンジン依存が重いため後続フェーズ
 
 ---

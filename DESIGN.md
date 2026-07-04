@@ -93,10 +93,12 @@ iCloud Drive / Atelier /
 │   ├── ieee.csl
 │   └── （ユーザー追加分）
 ├── library/                      ← 論文保管庫（グローバル・全Projectが参照）
-│   ├── 2024_田中_音響/
+│   │                                ※フォルダ名 = citation key（csl_json.id）に統一。
+│   │                                  project.json の refs・[@key] 引用・vault再構築が同じキーで解決できる
+│   ├── tanaka2024/
 │   │   ├── paper.pdf
 │   │   └── meta.md               ← 要約・タグ・CSL-JSONメタデータ
-│   └── 2023_Smith_NLP/
+│   └── smith2023/
 │       ├── paper.pdf
 │       └── meta.md
 └── projects/                     ← プロジェクト（作業単位）
@@ -212,6 +214,7 @@ PDFを読み、素材を蓄える。
 **原稿タブ（draft.md）**
 - **WYSIWYG編集**：見出し・強調・引用などは装飾ブロックとして表示し、`#`・`**` 等の記法を画面に出さない
 - `@田中2024` と打つと引用サジェストが出現 → インライン引用チップとして表示
+- 引用チップの保存形式は pandoc 標準の **`[@citation-key]`**（例：`[@tanaka2024]`）。draft.md ではこの形式が正本（Obsidianではただのテキストとして無害に表示される）
 - **保存は標準Markdown（draft.md）**。エディタ内部のJSON表現は永続化しない。読込＝MD→ノード木、保存＝ノード木→標準MD。**往復ロスレス**が要件（テスト対象）
 - ソースモードへの切替トグルを併設（生MDを直接編集できる退避手段）
 - 出力時：meta.md frontmatter → refs.json 生成 → pandoc → 選択中の.cslで整形 → 参考文献リスト自動生成
@@ -235,7 +238,8 @@ PDFを読み、素材を蓄える。
 ```
 project.json { "csl": "ipsj.csl" }
          ↓ 出力時
-pandoc draft.md --bibliography=refs.json --csl=styles/ipsj.csl -o output.docx
+pandoc draft.md --citeproc --bibliography=refs.json --csl=styles/ipsj.csl -o output.docx
+（--citeproc は必須。pandoc 2.11+ ではこれがないと引用が解決されない）
 ```
 
 ### スタイルの3レイヤー
