@@ -236,8 +236,13 @@ class AppTheme {
       borderRadius: BorderRadius.circular(radius),
     );
 
+    // Shared across the app: dialog titles take the serif display voice, so
+    // every AlertDialog reads in the same editorial register without each call
+    // site restyling its title.
+    final atelierType = AtelierType.of(scheme);
+
     return base.copyWith(
-      extensions: <ThemeExtension<dynamic>>[AtelierType.of(scheme)],
+      extensions: <ThemeExtension<dynamic>>[atelierType],
       textTheme: text,
       dividerTheme: DividerThemeData(
         color: scheme.outlineVariant,
@@ -294,7 +299,7 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
-        titleTextStyle: text.titleLarge,
+        titleTextStyle: atelierType.displaySmall,
         contentTextStyle: text.bodyMedium?.copyWith(color: scheme.onSurface),
       ),
       popupMenuTheme: PopupMenuThemeData(
