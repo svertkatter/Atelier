@@ -84,39 +84,53 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final papersAsync = ref.watch(papersProvider);
 
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(28, 24, 28, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('ライブラリ', style: Theme.of(context).textTheme.titleLarge),
-              const Spacer(),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('ライブラリ',
+                        style: Theme.of(context).textTheme.headlineSmall),
+                    const SizedBox(height: 2),
+                    Text(
+                      '論文を管理し、読み、引用します。',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
               OutlinedButton.icon(
-                icon: const Icon(Icons.link),
-                label: const Text('URL/DOI からインポート'),
+                icon: const Icon(Icons.link, size: 18),
+                label: const Text('URL/DOI'),
                 onPressed: _startUrlImport,
               ),
               const SizedBox(width: 8),
               FilledButton.icon(
-                icon: const Icon(Icons.upload_file),
+                icon: const Icon(Icons.upload_file, size: 18),
                 label: const Text('PDF をインポート'),
                 onPressed: _startPdfImport,
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
           TextField(
             controller: _searchController,
             decoration: const InputDecoration(
               prefixIcon: Icon(Icons.search),
               hintText: 'タイトル・著者・タグで検索',
-              border: OutlineInputBorder(),
-              isDense: true,
             ),
             onChanged: _onSearchChanged,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           Expanded(
             child: papersAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
@@ -152,44 +166,37 @@ class _PaperList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (rows.isEmpty) {
-      return const Center(
-          child: Text('論文がありません。「PDF をインポート」または「URL/DOI からインポート」から追加してください。'));
+      return _EmptyLibraryView(config: config);
     }
     return ListView.separated(
       itemCount: rows.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
+      separatorBuilder: (_, _) =>
+          const Divider(height: 1, indent: 52, endIndent: 4),
       itemBuilder: (context, i) {
         final row = rows[i];
         final id = (row['id'] ?? '').toString();
         final title = (row['title'] ?? '').toString();
         final author = (row['author'] ?? '').toString();
         final year = row['year'];
-        final tags = (row['tags'] ?? '').toString();
+        final tags = (row['tags'] ?? '')
+            .toString()
+            .split(RegExp(r'[,\s、]+'))
+            .map((t) => t.trim())
+            .where((t) => t.isNotEmpty)
+            .toList();
         final hasPdf = File(config.paperPdfPath(id)).existsSync();
-        return ListTile(
-          leading: Icon(hasPdf
-              ? Icons.description_outlined
-              : Icons.warning_amber_rounded),
-          title: Text(title.isEmpty ? id : title),
-          subtitle: Text([
-            if (author.isNotEmpty) author,
-            if (year != null) '($year)',
-            if (tags.isNotEmpty) tags,
-            if (!hasPdf) 'PDFなし',
-          ].join('  ')),
-          trailing: PopupMenuButton<String>(
-            tooltip: '操作',
-            onSelected: (action) => _handleAction(context, action, id),
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'edit', child: Text('メタデータを編集')),
-              PopupMenuItem(value: 'addProject', child: Text('プロジェクトへ追加')),
-              PopupMenuItem(value: 'delete', child: Text('削除')),
-            ],
-          ),
-          onTap: () {
+        return _PaperRow(
+          id: id,
+          title: title.isEmpty ? id : title,
+          author: author,
+          year: year,
+          tags: tags,
+          hasPdf: hasPdf,
+          onOpen: () {
             ref.read(selectedPaperProvider.notifier).select(id);
             ref.read(selectedModeProvider.notifier).select(AppMode.reader);
           },
+          onAction: (action) => _handleAction(context, action, id),
         );
       },
     );
@@ -251,6 +258,188 @@ class _PaperList extends StatelessWidget {
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('削除に失敗しました: $e')));
     }
+  }
+}
+
+/// A single library entry row: PDF-status icon, title, author/year meta, and
+/// tag chips, with an overflow action menu. Tapping opens it in the Reader.
+class _PaperRow extends StatelessWidget {
+  const _PaperRow({
+    required this.id,
+    required this.title,
+    required this.author,
+    required this.year,
+    required this.tags,
+    required this.hasPdf,
+    required this.onOpen,
+    required this.onAction,
+  });
+
+  final String id;
+  final String title;
+  final String author;
+  final Object? year;
+  final List<String> tags;
+  final bool hasPdf;
+  final VoidCallback onOpen;
+  final ValueChanged<String> onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final meta = [
+      if (author.isNotEmpty) author,
+      if (year != null) '$year',
+    ].join('・');
+
+    return InkWell(
+      onTap: onOpen,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 2, right: 12),
+              child: Icon(
+                hasPdf
+                    ? Icons.article_outlined
+                    : Icons.report_gmailerrorred_outlined,
+                size: 22,
+                color: hasPdf ? scheme.primary : scheme.error,
+              ),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: theme.textTheme.bodyLarge
+                        ?.copyWith(fontWeight: FontWeight.w600),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (meta.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      meta,
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(color: scheme.onSurfaceVariant),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  if (tags.isNotEmpty || !hasPdf) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        if (!hasPdf)
+                          _MiniChip(
+                            label: 'PDFなし',
+                            color: scheme.error,
+                            background:
+                                scheme.errorContainer.withValues(alpha: 0.5),
+                          ),
+                        for (final tag in tags) _MiniChip(label: tag),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            PopupMenuButton<String>(
+              tooltip: '操作',
+              icon: Icon(Icons.more_horiz, color: scheme.onSurfaceVariant),
+              onSelected: onAction,
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: 'edit', child: Text('メタデータを編集')),
+                PopupMenuItem(value: 'addProject', child: Text('プロジェクトへ追加')),
+                PopupMenuItem(value: 'delete', child: Text('削除')),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A small pill used for tags and status flags in the library list.
+class _MiniChip extends StatelessWidget {
+  const _MiniChip({required this.label, this.color, this.background});
+
+  final String label;
+  final Color? color;
+  final Color? background;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final fg = color ?? scheme.onSurfaceVariant;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: background ?? scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context)
+            .textTheme
+            .labelSmall
+            ?.copyWith(color: fg, fontWeight: FontWeight.w500),
+      ),
+    );
+  }
+}
+
+/// Shown when the library has no entries: an inviting icon, guidance, and the
+/// primary import action.
+class _EmptyLibraryView extends StatelessWidget {
+  const _EmptyLibraryView({required this.config});
+
+  final VaultConfig config;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 88,
+              height: 88,
+              decoration: BoxDecoration(
+                color: scheme.primaryContainer.withValues(alpha: 0.4),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.local_library_outlined,
+                  size: 44, color: scheme.primary),
+            ),
+            const SizedBox(height: 20),
+            Text('ライブラリは空です',
+                style: theme.textTheme.titleMedium),
+            const SizedBox(height: 6),
+            Text(
+              '上の「PDF をインポート」または「URL/DOI」から\n最初の論文を追加しましょう。',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

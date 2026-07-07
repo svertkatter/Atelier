@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/app_settings.dart';
 import '../providers/settings_providers.dart';
 import '../providers/vault_providers.dart';
+import 'theme/theme_toggle.dart';
 
 /// Settings screen: vault root folder, pandoc path, CrossRef contact email,
 /// CiNii Research app ID. Also serves as the first-run setup screen when no
@@ -38,89 +39,242 @@ class SettingsScreen extends ConsumerWidget {
     final settingsAsync = ref.watch(appSettingsProvider);
     final pandocAsync = ref.watch(pandocPathProvider);
 
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: ListView(
-        children: [
-          Text('設定', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 24),
-
-          // ---- Vault root ----
-          Text('Vault フォルダ', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          configAsync.when(
-            loading: () => const CircularProgressIndicator(),
-            error: (e, _) => Text('読み込み失敗: $e'),
-            data: (config) {
-              if (config == null) {
-                return Card(
-                  color: Theme.of(context).colorScheme.errorContainer,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                            'Vault が未設定です。iCloud Drive 上のフォルダ（例: iCloud Drive/Atelier）を選択してください。\n'
-                            '選択すると styles/ library/ projects/ が自動作成されます。'),
-                        const SizedBox(height: 12),
-                        FilledButton.icon(
-                          icon: const Icon(Icons.folder_open),
-                          label: const Text('Vault フォルダを選択'),
-                          onPressed: () => _pickVaultRoot(context, ref),
-                        ),
-                      ],
-                    ),
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: ListView(
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
+          children: [
+            Text('設定', style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 4),
+            Text(
+              'Atelier の外観と外部ツールを設定します。',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
-                );
-              }
-              return Row(
-                children: [
-                  Expanded(child: Text(config.rootPath)),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.folder_open),
-                    label: const Text('変更'),
-                    onPressed: () => _pickVaultRoot(context, ref),
-                  ),
-                ],
-              );
-            },
-          ),
-
-          const SizedBox(height: 32),
-
-          // ---- pandoc ----
-          Text('pandoc', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          pandocAsync.when(
-            loading: () => const CircularProgressIndicator(),
-            error: (e, _) => Text('検出失敗: $e'),
-            data: (path) => Row(
-              children: [
-                Expanded(
-                  child: Text(path == null
-                      ? 'pandoc が見つかりません（docx 出力は無効です）'
-                      : '検出済み: $path'),
-                ),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.folder_open),
-                  label: const Text('手動指定'),
-                  onPressed: () => _pickPandocPath(context, ref),
-                ),
-              ],
             ),
-          ),
+            const SizedBox(height: 28),
 
-          const SizedBox(height: 32),
+            // ---- Appearance ----
+            _Section(
+              title: '外観',
+              icon: Icons.palette_outlined,
+              description: 'テーマはシステム設定に追従、またはライト／ダークに固定できます。',
+              child: const Align(
+                alignment: Alignment.centerLeft,
+                child: ThemeModeSelector(),
+              ),
+            ),
 
-          // ---- CrossRef / CiNii ----
-          Text('メタデータ API', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          settingsAsync.when(
-            loading: () => const CircularProgressIndicator(),
-            error: (e, _) => Text('読み込み失敗: $e'),
-            data: (settings) => _MetadataSettingsForm(settings: settings),
+            // ---- Vault root ----
+            _Section(
+              title: 'Vault フォルダ',
+              icon: Icons.folder_special_outlined,
+              child: configAsync.when(
+                loading: () => const LinearProgressIndicator(),
+                error: (e, _) => Text('読み込み失敗: $e'),
+                data: (config) {
+                  if (config == null) {
+                    return _InlineNotice(
+                      tone: _NoticeTone.warning,
+                      message:
+                          'Vault が未設定です。iCloud Drive 上のフォルダ（例: iCloud Drive/Atelier）を選択してください。'
+                          '選択すると styles/ library/ projects/ が自動作成されます。',
+                      action: FilledButton.icon(
+                        icon: const Icon(Icons.folder_open),
+                        label: const Text('Vault フォルダを選択'),
+                        onPressed: () => _pickVaultRoot(context, ref),
+                      ),
+                    );
+                  }
+                  return _PathRow(
+                    path: config.rootPath,
+                    onChange: () => _pickVaultRoot(context, ref),
+                  );
+                },
+              ),
+            ),
+
+            // ---- pandoc ----
+            _Section(
+              title: 'pandoc',
+              icon: Icons.terminal_outlined,
+              description: 'docx 出力に使用します（Mac / Windows）。',
+              child: pandocAsync.when(
+                loading: () => const LinearProgressIndicator(),
+                error: (e, _) => Text('検出失敗: $e'),
+                data: (path) => path == null
+                    ? _InlineNotice(
+                        tone: _NoticeTone.warning,
+                        message: 'pandoc が見つかりません（docx 出力は無効です）。',
+                        action: OutlinedButton.icon(
+                          icon: const Icon(Icons.folder_open),
+                          label: const Text('手動指定'),
+                          onPressed: () => _pickPandocPath(context, ref),
+                        ),
+                      )
+                    : _PathRow(
+                        path: path,
+                        changeLabel: '手動指定',
+                        onChange: () => _pickPandocPath(context, ref),
+                      ),
+              ),
+            ),
+
+            // ---- CrossRef / CiNii ----
+            _Section(
+              title: 'メタデータ API',
+              icon: Icons.cloud_outlined,
+              description: 'CrossRef / CiNii Research からメタデータを取得する際の設定です。',
+              child: settingsAsync.when(
+                loading: () => const LinearProgressIndicator(),
+                error: (e, _) => Text('読み込み失敗: $e'),
+                data: (settings) => _MetadataSettingsForm(settings: settings),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A titled settings group: icon + heading + optional description, then its
+/// body. Groups are separated by tone/whitespace rather than heavy cards.
+class _Section extends StatelessWidget {
+  const _Section({
+    required this.title,
+    required this.icon,
+    required this.child,
+    this.description,
+  });
+
+  final String title;
+  final IconData icon;
+  final Widget child;
+  final String? description;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 20, color: scheme.primary),
+              const SizedBox(width: 8),
+              Text(title, style: theme.textTheme.titleMedium),
+            ],
           ),
+          if (description != null) ...[
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.only(left: 28),
+              child: Text(
+                description!,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: scheme.outlineVariant),
+            ),
+            child: child,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A read-only path with a change button, used for the vault root and pandoc.
+class _PathRow extends StatelessWidget {
+  const _PathRow({
+    required this.path,
+    required this.onChange,
+    this.changeLabel = '変更',
+  });
+
+  final String path;
+  final VoidCallback onChange;
+  final String changeLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: SelectableText(
+            path,
+            maxLines: 2,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ),
+        const SizedBox(width: 12),
+        OutlinedButton.icon(
+          icon: const Icon(Icons.folder_open, size: 18),
+          label: Text(changeLabel),
+          onPressed: onChange,
+        ),
+      ],
+    );
+  }
+}
+
+enum _NoticeTone { warning }
+
+/// An inline notice block (message + optional action), tinted by [tone].
+class _InlineNotice extends StatelessWidget {
+  const _InlineNotice({
+    required this.tone,
+    required this.message,
+    this.action,
+  });
+
+  final _NoticeTone tone;
+  final String message;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final bg = switch (tone) {
+      _NoticeTone.warning => scheme.errorContainer.withValues(alpha: 0.5),
+    };
+    final fg = switch (tone) {
+      _NoticeTone.warning => scheme.onErrorContainer,
+    };
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(message,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: fg)),
+          if (action != null) ...[
+            const SizedBox(height: 12),
+            Align(alignment: Alignment.centerLeft, child: action!),
+          ],
         ],
       ),
     );

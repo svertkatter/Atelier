@@ -63,42 +63,69 @@ class _ProjectPicker extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final projectsAsync = ref.watch(writerProjectsProvider);
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.fromLTRB(28, 24, 28, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('プロジェクトを選択',
-                  style: Theme.of(context).textTheme.titleLarge),
-              const Spacer(),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('プロジェクト',
+                        style: Theme.of(context).textTheme.headlineSmall),
+                    const SizedBox(height: 2),
+                    Text(
+                      '原稿を書き、引用を整え、docx に出力します。',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
               FilledButton.icon(
-                icon: const Icon(Icons.add),
+                icon: const Icon(Icons.add, size: 18),
                 label: const Text('新規プロジェクト'),
                 onPressed: () => _createProject(context, ref),
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           Expanded(
             child: projectsAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(child: Text('読み込み失敗: $e')),
               data: (projects) {
                 if (projects.isEmpty) {
-                  return const Center(
-                      child: Text('プロジェクトがありません。「新規プロジェクト」で作成してください。'));
+                  return _EmptyProjectsView(
+                    onCreate: () => _createProject(context, ref),
+                  );
                 }
                 return ListView.separated(
                   itemCount: projects.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  separatorBuilder: (_, _) =>
+                      const Divider(height: 1, indent: 52, endIndent: 4),
                   itemBuilder: (context, i) {
                     final proj = projects[i];
+                    final scheme = Theme.of(context).colorScheme;
                     return ListTile(
-                      leading: const Icon(Icons.description_outlined),
-                      title: Text(proj.name),
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 8),
+                      leading: Icon(Icons.edit_note_outlined,
+                          color: scheme.primary),
+                      title: Text(proj.name,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyLarge
+                              ?.copyWith(fontWeight: FontWeight.w600)),
                       subtitle: Text(
                           '参照 ${proj.refs.length} 件・スタイル: ${proj.csl ?? "(既定)"}'),
+                      trailing: Icon(Icons.chevron_right,
+                          color: scheme.onSurfaceVariant),
                       onTap: () => ref
                           .read(selectedProjectProvider.notifier)
                           .select(proj.effectiveFolderName),
@@ -128,6 +155,55 @@ class _ProjectPicker extends ConsumerWidget {
     final proj = await store.create(name: result.name.trim(), csl: result.csl);
     ref.invalidate(writerProjectsProvider);
     ref.read(selectedProjectProvider.notifier).select(proj.effectiveFolderName);
+  }
+}
+
+/// Shown when the Writer has no projects yet.
+class _EmptyProjectsView extends StatelessWidget {
+  const _EmptyProjectsView({required this.onCreate});
+
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 380),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 88,
+              height: 88,
+              decoration: BoxDecoration(
+                color: scheme.primaryContainer.withValues(alpha: 0.4),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.edit_note_outlined,
+                  size: 46, color: scheme.primary),
+            ),
+            const SizedBox(height: 20),
+            Text('プロジェクトがありません',
+                style: theme.textTheme.titleMedium),
+            const SizedBox(height: 6),
+            Text(
+              '「新規プロジェクト」から執筆を始めましょう。',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('新規プロジェクト'),
+              onPressed: onCreate,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -519,10 +595,23 @@ class _DraftEditorState extends ConsumerState<_DraftEditor> {
             if (_statusMessage != null)
               Container(
                 width: double.infinity,
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                color: Theme.of(context).colorScheme.surfaceContainerHigh,
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                child: Text(_statusMessage!),
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _statusMessage!,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
+                ),
               ),
           ],
         ),
@@ -546,9 +635,19 @@ class _DraftEditorState extends ConsumerState<_DraftEditor> {
           Text(project?.name ?? widget.folder,
               style: Theme.of(context).textTheme.titleMedium),
           if (_dirty)
-            const Padding(
-              padding: EdgeInsets.only(left: 6),
-              child: Text('•', style: TextStyle(color: Colors.orange)),
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: Tooltip(
+                message: '未保存の変更があります',
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.tertiary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
             ),
           const Spacer(),
           TextButton.icon(

@@ -405,6 +405,12 @@ Step 5：Obsidian Vaultを正式に移行（併用終了）
 Step 6：グラフビュー等の任意機能
 ```
 
+### テーマカスタマイズ（将来）
+
+外観は「紙とインク」を基調としたエディトリアル調に統一し、ライト（和紙の温白色サーフェス＋墨色テキスト＋テラコッタ系の単一アクセント）とダーク（温かみのあるチャコール基調・柔らかいコントラスト・同系アクセント）の2テーマを Material 3 の `ColorScheme.fromSeed` ベースで用意した。テーマ定義は `lib/ui/theme/app_theme.dart` に一元化し、全画面が `ColorScheme`・コンポーネントテーマ経由で色を参照する（画面コードに色の直値を書かない）。ThemeMode（system / light / dark）は `AppSettings`（SharedPreferences）に永続化し、Riverpod の `themeModeProvider` 経由で `MaterialApp` に接続、シェルの外観トグルと設定画面から切り替えられる。
+
+将来的なユーザー向けテーマカスタマイズは、Obsidian のような生 CSS の直接編集ではなく、**GUI でのテーマ編集**（色・フォント・情報密度をアプリ内 UI のカラーピッカー／スライダー等で調整）を目指す。編集結果はテーマトークンの宣言的形式（JSON 等）として保存し、`app_theme.dart` がその宣言から `ThemeData` を組み立てる構成に発展させる。今回実装した ThemeMode 切替とテーマ一元化はその土台であり、既存アーキテクチャ（ファイルが真実・宣言的な設定）と整合する。
+
 ---
 
 ## 10. Claude Code 開発運用（モデル使い分け）

@@ -35,8 +35,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     return Row(
       children: [
         if (_sidebarOpen)
-          SizedBox(
-            width: 260,
+          Container(
+            width: 272,
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
             child: _PaperSidebar(
               config: widget.config,
               selected: selected,
@@ -89,7 +90,7 @@ class _PaperSidebar extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 4, 4),
+          padding: const EdgeInsets.fromLTRB(16, 14, 6, 6),
           child: Row(
             children: [
               Expanded(
@@ -104,6 +105,7 @@ class _PaperSidebar extends ConsumerWidget {
             ],
           ),
         ),
+        const Divider(height: 1),
         Expanded(
           child: papersAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
@@ -125,16 +127,18 @@ class _PaperSidebar extends ConsumerWidget {
                   final year = row['year'];
                   final hasPdf = File(config.paperPdfPath(id)).existsSync();
                   final isSelected = id == selected;
+                  final scheme = Theme.of(context).colorScheme;
                   return ListTile(
                     dense: true,
                     selected: isSelected,
-                    selectedTileColor:
-                        Theme.of(context).colorScheme.primaryContainer,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 12),
                     leading: Icon(
                       hasPdf
-                          ? Icons.description_outlined
-                          : Icons.warning_amber_rounded,
+                          ? Icons.article_outlined
+                          : Icons.report_gmailerrorred_outlined,
                       size: 20,
+                      color: hasPdf ? scheme.primary : scheme.error,
                     ),
                     title: Text(
                       title.isEmpty ? id : title,
@@ -207,28 +211,47 @@ class _PaperViewerState extends ConsumerState<_PaperViewer> {
     final hasPdf = File(pdfPath).existsSync();
 
     if (!hasPdf) {
+      final scheme = Theme.of(context).colorScheme;
       return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.warning_amber_rounded, size: 48),
-              const SizedBox(height: 12),
-              Text('この論文には PDF がありません: ${widget.folder}',
-                  textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              FilledButton.icon(
-                icon: _attaching
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.attach_file),
-                label: const Text('PDF を添付'),
-                onPressed: _attaching ? null : _attachPdf,
-              ),
-            ],
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 380),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHigh,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.picture_as_pdf_outlined,
+                      size: 40, color: scheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 20),
+                Text('PDF が未添付です',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 6),
+                Text(widget.folder,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        )),
+                const SizedBox(height: 20),
+                FilledButton.icon(
+                  icon: _attaching
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.attach_file, size: 18),
+                  label: const Text('PDF を添付'),
+                  onPressed: _attaching ? null : _attachPdf,
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -277,12 +300,30 @@ class _EmptyReaderView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Padding(
-        padding: EdgeInsets.all(24),
-        child: Text(
-          'ライブラリで論文を選択すると、ここに表示されます。',
-          textAlign: TextAlign.center,
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.menu_book_outlined,
+                  size: 52, color: scheme.onSurfaceVariant),
+              const SizedBox(height: 16),
+              Text('論文を選んでください',
+                  style: theme.textTheme.titleMedium),
+              const SizedBox(height: 6),
+              Text(
+                '左の一覧から論文を選択すると、ここに PDF が表示されます。',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ],
+          ),
         ),
       ),
     );
