@@ -11,7 +11,8 @@ import 'openalex_client.dart';
 ///
 /// ```
 /// DOI detected      -> CrossRef -> (failure/thin) -> OpenAlex supplement
-/// CiNii ID/URL      -> CiNii Research
+/// CiNii ID/URL      -> CRID? -> CiNii Research lookupByCrid (direct)
+///                             -> (no CRID, or that fails) -> opensearch free-text
 /// J-STAGE URL       -> J-STAGE
 /// nothing detected  -> null (caller falls back to the manual entry form)
 /// ```
@@ -43,7 +44,7 @@ class MetadataLookup {
       case DetectedIdentifierKind.doi:
         return _lookupDoi(detected.value);
       case DetectedIdentifierKind.cinii:
-        return _cinii.search(detected.value);
+        return _lookupCinii(detected.value);
       case DetectedIdentifierKind.jstage:
         return _jstage.search(detected.value);
       case DetectedIdentifierKind.none:
@@ -78,6 +79,25 @@ class MetadataLookup {
     // Both present but CrossRef was thin: prefer OpenAlex only if it is
     // actually richer.
     return openAlexResult.isThin ? crossrefResult : openAlexResult;
+  }
+
+  /// A CRID (e.g. from a `cir.nii.ac.jp/crid/...` URL) must go through the
+  /// direct-lookup endpoint first: the opensearch/articles endpoint used by
+  /// [CiniiClient.search] is a free-text search and returns zero matches for
+  /// a bare CRID number. Only fall back to the free-text search when no CRID
+  /// could be extracted (e.g. a legacy `naid/...` URL) or the direct lookup
+  /// fails outright (network error, 404, unexpected shape).
+  Future<MetadataLookupResult?> _lookupCinii(String text) async {
+    final crid = CiniiClient.extractCrid(text);
+    if (crid != null) {
+      try {
+        final direct = await _cinii.lookupByCrid(crid);
+        if (direct != null) return direct;
+      } catch (_) {
+        // Fall through to the opensearch free-text fallback below.
+      }
+    }
+    return _cinii.search(text);
   }
 
   void close() {

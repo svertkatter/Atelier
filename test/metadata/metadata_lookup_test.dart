@@ -121,6 +121,76 @@ void main() {
       expect(result!.source, MetadataSource.cinii);
     });
 
+    test(
+        'REGRESSION: a CiNii CRID URL hits the direct /crid/{id}.json lookup '
+        '(not opensearch), and never falls back when the direct lookup '
+        'succeeds', () async {
+      var opensearchCalled = false;
+      final lookup = MetadataLookup(
+        httpClient: MockClient((request) async {
+          expect(request.url.host, 'cir.nii.ac.jp');
+          if (request.url.path.contains('opensearch')) {
+            opensearchCalled = true;
+            // The real-world bug: opensearch 0-matches a bare CRID number.
+            return http.Response(jsonEncode({'items': []}), 200);
+          }
+          // Direct CRID lookup endpoint.
+          expect(request.url.toString(),
+              'https://cir.nii.ac.jp/crid/1050868284190107520.json');
+          // Japanese text needs explicit UTF-8 bytes + charset header — a
+          // plain http.Response(String, ...) defaults to latin1 and throws
+          // when encoding non-Latin1 characters (would otherwise be silently
+          // swallowed by MetadataLookup's CRID->opensearch fallback catch).
+          return http.Response.bytes(
+            utf8.encode(jsonEncode({
+              '@id': 'https://cir.nii.ac.jp/crid/1050868284190107520.json',
+              'dc:title': [
+                {'@language': 'ja', '@value': '実在のCRIDレコード'}
+              ],
+            })),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+      );
+
+      final result = await lookup
+          .lookup('https://cir.nii.ac.jp/crid/1050868284190107520');
+      expect(result, isNotNull);
+      expect(result!.source, MetadataSource.cinii);
+      expect(result.metadata.title, '実在のCRIDレコード');
+      expect(result.metadata.id, '1050868284190107520');
+      expect(opensearchCalled, isFalse);
+    });
+
+    test(
+        'a CiNii CRID URL falls back to opensearch when the direct lookup '
+        '404s', () async {
+      final lookup = MetadataLookup(
+        httpClient: MockClient((request) async {
+          if (!request.url.path.contains('opensearch')) {
+            return http.Response('', 404);
+          }
+          return http.Response(
+            jsonEncode({
+              'items': [
+                {
+                  '@id': 'https://cir.nii.ac.jp/crid/999',
+                  'title': 'Found via opensearch fallback',
+                }
+              ]
+            }),
+            200,
+          );
+        }),
+      );
+
+      final result =
+          await lookup.lookup('https://cir.nii.ac.jp/crid/999');
+      expect(result, isNotNull);
+      expect(result!.metadata.title, 'Found via opensearch fallback');
+    });
+
     test('J-STAGE URL input routes to J-STAGE', () async {
       final lookup = MetadataLookup(
         httpClient: MockClient((request) async {
