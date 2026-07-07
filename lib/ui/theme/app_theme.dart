@@ -1,5 +1,84 @@
 import 'package:flutter/material.dart';
 
+/// Editorial display typography — the "atelier" voice.
+///
+/// Japanese mincho (serif) is used for identity moments: the wordmark, the
+/// three mode verbs (整える・読む・書く), screen headings, and empty states.
+/// Everyday UI text stays in the platform gothic via [ThemeData]'s
+/// `fontFamilyFallback`. Access via `Theme.of(context).extension<AtelierType>()!`.
+class AtelierType extends ThemeExtension<AtelierType> {
+  const AtelierType({
+    required this.display,
+    required this.displaySmall,
+    required this.verb,
+  });
+
+  /// Large screen heading (e.g.「整える」at the top of the library).
+  final TextStyle display;
+
+  /// Smaller serif accent (dialog titles, empty-state headings).
+  final TextStyle displaySmall;
+
+  /// The sidebar mode verbs.
+  final TextStyle verb;
+
+  static const List<String> serifFallback = <String>[
+    'Yu Mincho',
+    'YuMincho',
+    'Hiragino Mincho ProN',
+    'Noto Serif CJK JP',
+    'Noto Serif JP',
+    'Georgia',
+    'Times New Roman',
+  ];
+
+  static AtelierType of(ColorScheme scheme) => AtelierType(
+        display: TextStyle(
+          fontFamilyFallback: serifFallback,
+          fontSize: 28,
+          fontWeight: FontWeight.w600,
+          height: 1.3,
+          letterSpacing: 1.5,
+          color: scheme.onSurface,
+        ),
+        displaySmall: TextStyle(
+          fontFamilyFallback: serifFallback,
+          fontSize: 19,
+          fontWeight: FontWeight.w600,
+          height: 1.35,
+          letterSpacing: 1.0,
+          color: scheme.onSurface,
+        ),
+        verb: TextStyle(
+          fontFamilyFallback: serifFallback,
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          height: 1.2,
+          letterSpacing: 2.0,
+          color: scheme.onSurface,
+        ),
+      );
+
+  @override
+  AtelierType copyWith(
+          {TextStyle? display, TextStyle? displaySmall, TextStyle? verb}) =>
+      AtelierType(
+        display: display ?? this.display,
+        displaySmall: displaySmall ?? this.displaySmall,
+        verb: verb ?? this.verb,
+      );
+
+  @override
+  AtelierType lerp(AtelierType? other, double t) {
+    if (other == null) return this;
+    return AtelierType(
+      display: TextStyle.lerp(display, other.display, t)!,
+      displaySmall: TextStyle.lerp(displaySmall, other.displaySmall, t)!,
+      verb: TextStyle.lerp(verb, other.verb, t)!,
+    );
+  }
+}
+
 /// Atelier's visual identity — a single source of truth for both the light and
 /// dark [ThemeData].
 ///
@@ -158,6 +237,7 @@ class AppTheme {
     );
 
     return base.copyWith(
+      extensions: <ThemeExtension<dynamic>>[AtelierType.of(scheme)],
       textTheme: text,
       dividerTheme: DividerThemeData(
         color: scheme.outlineVariant,

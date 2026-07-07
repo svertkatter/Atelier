@@ -49,6 +49,8 @@ dependencies:
   shared_preferences: ^2.5.5
   appflowy_editor: ^6.1.0
   xml: ^6.6.1
+  # カスタムウィンドウクローム（タイトルバー非表示・ドラッグ移動・最小化/最大化/閉じる）
+  window_manager: ^0.4.3
 
 # ---------------------------------------------------------------------------
 # 一時的な override：pub 版 appflowy_editor（6.2.0 以前）は Flutter 3.44 と
