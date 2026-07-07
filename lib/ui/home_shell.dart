@@ -7,6 +7,7 @@ import '../providers/vault_providers.dart';
 import 'library_screen.dart';
 import 'reader_screen.dart';
 import 'settings_screen.dart';
+import 'shell/command_palette.dart';
 import 'shell/title_bar.dart';
 import 'theme/app_theme.dart';
 import 'theme/theme_toggle.dart';
@@ -40,6 +41,10 @@ class HomeShell extends ConsumerWidget {
             select(AppMode.writer),
         const SingleActivator(LogicalKeyboardKey.comma, control: true): () =>
             select(AppMode.settings),
+        const SingleActivator(LogicalKeyboardKey.keyK, control: true): () =>
+            showCommandPalette(context, ref),
+        const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () =>
+            showCommandPalette(context, ref),
       },
       child: Focus(
         autofocus: true,
