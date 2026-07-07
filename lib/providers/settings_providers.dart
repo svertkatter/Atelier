@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/app_settings.dart';
@@ -36,7 +37,30 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettings> {
         () => current.copyWithSaved(manualPandocPath: path));
     PandocExport.manualPandocPath = path;
   }
+
+  Future<void> setThemeMode(ThemeMode mode) async {
+    final current = await future;
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(
+        () => current.copyWithSaved(themeModeName: mode.name));
+  }
 }
+
+/// The persisted appearance preference as a Flutter [ThemeMode]. Resolves to
+/// [ThemeMode.system] until settings have loaded (and on any unknown value).
+final themeModeProvider = Provider<ThemeMode>((ref) {
+  final name = ref
+      .watch(appSettingsProvider)
+      .maybeWhen(data: (s) => s.themeModeName, orElse: () => null);
+  switch (name) {
+    case 'light':
+      return ThemeMode.light;
+    case 'dark':
+      return ThemeMode.dark;
+    default:
+      return ThemeMode.system;
+  }
+});
 
 /// A [MetadataLookup] configured from the current [AppSettings]. Rebuilt
 /// whenever settings change so a new contact email / CiNii app ID takes
