@@ -5,10 +5,17 @@ import 'package:path/path.dart' as p;
 
 import 'package:atelier/data/library_import.dart';
 import 'package:atelier/data/meta_md.dart';
+import 'package:atelier/data/metadata/crossref_client.dart';
 import 'package:atelier/data/vault_config.dart';
+import 'package:atelier/data/vault_index.dart';
 import 'package:atelier/models/csl_metadata.dart';
+import 'package:atelier/platform/database_init.dart';
 
 void main() {
+  setUpAll(() {
+    useFfiDatabaseFactoryForTests();
+  });
+
   late Directory tempRoot;
   late VaultConfig config;
   late File sourcePdf;
@@ -80,6 +87,116 @@ void main() {
 
     expect(paper.effectiveFolderName, 'tanaka2024a');
     expect(await File(config.paperPdfPath('tanaka2024a')).exists(), isTrue);
+  });
+
+  test(
+      'REGRESSION: importing a CrossRef result (metadata.id == DOI) never '
+      'creates a nested/slash folder and lands at library/ top level, '
+      'indexed', () async {
+    // CrossrefClient.normalize sets metadata.id to the (slash-containing) DOI
+    // itself — this is the exact shape that reached importPaper in the field
+    // and produced library/10.1038/nphys1170/ (an unindexable nested path).
+    final metadata = CrossrefClient.normalize({
+      'title': ['Observation of a nonlinear photonic phenomenon'],
+      'author': [
+        {'family': 'Tanaka', 'given': 'Taro'}
+      ],
+      'issued': {
+        'date-parts': [
+          [2024]
+        ]
+      },
+      'DOI': '10.1038/nphys1170',
+    }, citationId: '10.1038/nphys1170');
+    expect(metadata.id, '10.1038/nphys1170'); // sanity: reproduces the bug input
+
+    final importer = LibraryImport(config);
+    final paper = await importer.importPaper(
+      sourcePdfPath: sourcePdf.path,
+      metadata: metadata,
+      source: 'crossref',
+      doi: metadata.doi,
+    );
+
+    // Folder name is the generated citation key, not the raw DOI.
+    expect(paper.effectiveFolderName, 'tanaka2024');
+    expect(paper.effectiveFolderName, isNot(contains('/')));
+
+    // The folder exists directly under library/ (no nested "10.1038/..." path).
+    expect(await Directory(p.join(config.libraryDir, 'tanaka2024')).exists(),
+        isTrue);
+    expect(await Directory(p.join(config.libraryDir, '10.1038')).exists(),
+        isFalse);
+
+    // The DOI itself is preserved (just not used as the folder/id).
+    final metaFile = File(config.metaMdPath('tanaka2024'));
+    final parsed = MetaMd.parse(await metaFile.readAsString(),
+        folderName: 'tanaka2024');
+    expect(parsed.doi, '10.1038/nphys1170');
+    expect(parsed.metadata.id, 'tanaka2024');
+
+    // The vault index scan (library/ top-level only) picks it up.
+    final index = await VaultIndex.open();
+    final result = await index.scan(config);
+    expect(result.papersIndexed, 1);
+    expect(result.errors, isEmpty);
+    final rows = await index.allPapers();
+    expect(rows.map((r) => r['id']), contains('tanaka2024'));
+    await index.close();
+  });
+
+  test('a manually-typed short id (already a safe key) is kept as-is',
+      () async {
+    final importer = LibraryImport(config);
+    final metadata = CslMetadata(id: 'my-key_1', title: 'Manual entry');
+    final paper = await importer.importPaper(
+      sourcePdfPath: sourcePdf.path,
+      metadata: metadata,
+    );
+    expect(paper.effectiveFolderName, 'my-key_1');
+  });
+
+  test('a bare numeric id (e.g. a CiNii CRID) is never used as the folder key',
+      () async {
+    final importer = LibraryImport(config);
+    final metadata = CslMetadata(
+      id: '1050282677628470784',
+      title: 'CiNii paper without a safe id',
+      authors: const [CslName(family: 'Suzuki')],
+      issuedDateParts: [
+        [2023]
+      ],
+    );
+    final paper = await importer.importPaper(
+      sourcePdfPath: sourcePdf.path,
+      metadata: metadata,
+    );
+    expect(paper.effectiveFolderName, 'suzuki2023');
+  });
+
+  test('importPaper without a PDF creates a metadata-only entry', () async {
+    final importer = LibraryImport(config);
+    final metadata = CslMetadata(id: 'nopdf2024', title: 'No PDF yet');
+    final paper = await importer.importPaper(
+      sourcePdfPath: null,
+      metadata: metadata,
+    );
+    expect(await File(config.metaMdPath('nopdf2024')).exists(), isTrue);
+    expect(await File(config.paperPdfPath('nopdf2024')).exists(), isFalse);
+    expect(paper.effectiveFolderName, 'nopdf2024');
+  });
+
+  test('attachPdf copies a PDF into an existing metadata-only entry',
+      () async {
+    final importer = LibraryImport(config);
+    await importer.importPaper(
+      sourcePdfPath: null,
+      metadata: CslMetadata(id: 'nopdf2025', title: 'No PDF yet'),
+    );
+    expect(await File(config.paperPdfPath('nopdf2025')).exists(), isFalse);
+
+    await importer.attachPdf(key: 'nopdf2025', sourcePdfPath: sourcePdf.path);
+    expect(await File(config.paperPdfPath('nopdf2025')).exists(), isTrue);
   });
 
   test('saveMetadata overwrites meta.md for manual edits', () async {
