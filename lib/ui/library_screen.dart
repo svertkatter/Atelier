@@ -5,18 +5,23 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/library_delete.dart';
 import '../data/library_import.dart';
 import '../data/meta_md.dart';
 import '../data/metadata/metadata_source.dart';
+import '../data/project_store.dart';
 import '../data/vault_config.dart';
 import '../models/csl_metadata.dart';
 import '../models/paper.dart';
+import '../models/project.dart';
 import '../providers/reader_providers.dart';
 import '../providers/settings_providers.dart';
+import '../providers/shell_providers.dart';
 import '../providers/vault_providers.dart';
+import '../providers/writer_providers.dart';
 
-/// Library mode: paper list (search), PDF import flow, and manual metadata
-/// editing. Phase 1c scope — no highlighting yet (Phase 2).
+/// Library mode: paper list (search), PDF/URL-DOI import flows, delete,
+/// "add to project", and manual metadata editing.
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key, required this.config});
 
@@ -44,7 +49,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         const Duration(milliseconds: 200), () => setState(() => _query = value));
   }
 
-  Future<void> _startImport() async {
+  Future<void> _startPdfImport() async {
     final result = await FilePicker.platform.pickFiles(
       dialogTitle: 'PDF を選択',
       type: FileType.custom,
@@ -63,6 +68,17 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     ref.invalidate(papersProvider);
   }
 
+  /// URL/DOI-only import (DESIGN.md「4-1./8.」): no PDF is required up front;
+  /// a PDF can be attached later from the Reader.
+  Future<void> _startUrlImport() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _ImportDialog(config: widget.config, pdfPath: null),
+    );
+    ref.invalidate(vaultScanProvider);
+    ref.invalidate(papersProvider);
+  }
+
   @override
   Widget build(BuildContext context) {
     final papersAsync = ref.watch(papersProvider);
@@ -76,10 +92,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             children: [
               Text('ライブラリ', style: Theme.of(context).textTheme.titleLarge),
               const Spacer(),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.link),
+                label: const Text('URL/DOI からインポート'),
+                onPressed: _startUrlImport,
+              ),
+              const SizedBox(width: 8),
               FilledButton.icon(
                 icon: const Icon(Icons.upload_file),
                 label: const Text('PDF をインポート'),
-                onPressed: _startImport,
+                onPressed: _startPdfImport,
               ),
             ],
           ),
@@ -130,7 +152,8 @@ class _PaperList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (rows.isEmpty) {
-      return const Center(child: Text('論文がありません。「PDF をインポート」から追加してください。'));
+      return const Center(
+          child: Text('論文がありません。「PDF をインポート」または「URL/DOI からインポート」から追加してください。'));
     }
     return ListView.separated(
       itemCount: rows.length,
@@ -142,25 +165,45 @@ class _PaperList extends StatelessWidget {
         final author = (row['author'] ?? '').toString();
         final year = row['year'];
         final tags = (row['tags'] ?? '').toString();
+        final hasPdf = File(config.paperPdfPath(id)).existsSync();
         return ListTile(
-          leading: const Icon(Icons.description_outlined),
+          leading: Icon(hasPdf
+              ? Icons.description_outlined
+              : Icons.warning_amber_rounded),
           title: Text(title.isEmpty ? id : title),
           subtitle: Text([
             if (author.isNotEmpty) author,
             if (year != null) '($year)',
             if (tags.isNotEmpty) tags,
+            if (!hasPdf) 'PDFなし',
           ].join('  ')),
-          trailing: IconButton(
-            tooltip: 'メタデータを編集',
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: () => _editMetadata(context, id),
+          trailing: PopupMenuButton<String>(
+            tooltip: '操作',
+            onSelected: (action) => _handleAction(context, action, id),
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'edit', child: Text('メタデータを編集')),
+              PopupMenuItem(value: 'addProject', child: Text('プロジェクトへ追加')),
+              PopupMenuItem(value: 'delete', child: Text('削除')),
+            ],
           ),
           onTap: () {
             ref.read(selectedPaperProvider.notifier).select(id);
+            ref.read(selectedModeProvider.notifier).select(AppMode.reader);
           },
         );
       },
     );
+  }
+
+  void _handleAction(BuildContext context, String action, String id) {
+    switch (action) {
+      case 'edit':
+        _editMetadata(context, id);
+      case 'addProject':
+        _addToProject(context, id);
+      case 'delete':
+        _delete(context, id);
+    }
   }
 
   Future<void> _editMetadata(BuildContext context, String folder) async {
@@ -176,19 +219,256 @@ class _PaperList extends StatelessWidget {
     ref.invalidate(vaultScanProvider);
     ref.invalidate(papersProvider);
   }
+
+  Future<void> _addToProject(BuildContext context, String key) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _AddToProjectDialog(config: config, paperKey: key),
+    );
+  }
+
+  Future<void> _delete(BuildContext context, String key) async {
+    final deleter = LibraryDelete(config);
+    final referencing = await deleter.projectsReferencing(key);
+    if (!context.mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) =>
+          _DeleteConfirmDialog(paperKey: key, referencingProjects: referencing),
+    );
+    if (confirmed != true) return;
+    if (!context.mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await deleter.delete(key);
+      ref.invalidate(vaultScanProvider);
+      ref.invalidate(papersProvider);
+      ref.invalidate(projectsProvider);
+      ref.invalidate(writerProjectsProvider);
+      messenger.showSnackBar(SnackBar(content: Text('$key を削除しました')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('削除に失敗しました: $e')));
+    }
+  }
 }
 
-/// PDF import flow: DOI/CiNii/J-STAGE input -> metadata lookup (DESIGN.md「6.」
-/// priority chain) -> confirm/edit form -> write library/{key}/.
+/// Confirmation dialog for deleting a library entry: warns which projects
+/// (if any) currently reference it, since their `refs` will be scrubbed too.
+class _DeleteConfirmDialog extends StatelessWidget {
+  const _DeleteConfirmDialog({
+    required this.paperKey,
+    required this.referencingProjects,
+  });
+
+  final String paperKey;
+  final List<Project> referencingProjects;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('論文を削除しますか？'),
+      content: SizedBox(
+        width: 380,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('$paperKey を library/ から完全に削除します。この操作は取り消せません。'),
+            const SizedBox(height: 12),
+            if (referencingProjects.isEmpty)
+              const Text('この論文を参照しているプロジェクトはありません。')
+            else ...[
+              Text('この論文を参照しているプロジェクト（削除後、参照は自動で外れます）:',
+                  style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 4),
+              for (final project in referencingProjects)
+                Text('・${project.name}'),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('キャンセル'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error),
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('削除する'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Lets the user add a paper to an existing project (or create a new one on
+/// the spot) via [ProjectStore.ensureRef].
+class _AddToProjectDialog extends ConsumerStatefulWidget {
+  const _AddToProjectDialog({required this.config, required this.paperKey});
+
+  final VaultConfig config;
+  final String paperKey;
+
+  @override
+  ConsumerState<_AddToProjectDialog> createState() =>
+      _AddToProjectDialogState();
+}
+
+class _AddToProjectDialogState extends ConsumerState<_AddToProjectDialog> {
+  final _newProjectController = TextEditingController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _newProjectController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _addToExisting(Project project) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final store = await ref.read(projectStoreProvider.future);
+      if (store == null) throw StateError('Vault が未設定です');
+      await store.ensureRef(project, widget.paperKey);
+      ref.invalidate(vaultScanProvider);
+      ref.invalidate(writerProjectsProvider);
+      ref.invalidate(projectsProvider);
+      if (!mounted) return;
+      Navigator.pop(context);
+      messenger.showSnackBar(
+          SnackBar(content: Text('${project.name} に追加しました')));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '追加に失敗しました: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _createAndAdd() async {
+    final name = _newProjectController.text.trim();
+    if (name.isEmpty) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final store = await ref.read(projectStoreProvider.future);
+      if (store == null) throw StateError('Vault が未設定です');
+      final project = await store.create(name: name);
+      await store.ensureRef(project, widget.paperKey);
+      ref.invalidate(vaultScanProvider);
+      ref.invalidate(writerProjectsProvider);
+      ref.invalidate(projectsProvider);
+      if (!mounted) return;
+      Navigator.pop(context);
+      messenger.showSnackBar(SnackBar(content: Text('$name を作成して追加しました')));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '作成に失敗しました: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final projectsAsync = ref.watch(writerProjectsProvider);
+    return AlertDialog(
+      title: Text('${widget.paperKey} をプロジェクトへ追加'),
+      content: SizedBox(
+        width: 380,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 200,
+              child: projectsAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Center(child: Text('読み込み失敗: $e')),
+                data: (projects) {
+                  if (projects.isEmpty) {
+                    return const Center(child: Text('プロジェクトがありません。下から新規作成できます。'));
+                  }
+                  return ListView.builder(
+                    itemCount: projects.length,
+                    itemBuilder: (context, i) {
+                      final project = projects[i];
+                      final already = project.refs.contains(widget.paperKey);
+                      return ListTile(
+                        dense: true,
+                        title: Text(project.name),
+                        subtitle: Text('参照 ${project.refs.length} 件'),
+                        trailing: already
+                            ? const Icon(Icons.check, size: 18)
+                            : const Icon(Icons.add, size: 18),
+                        enabled: !_busy && !already,
+                        onTap: already ? null : () => _addToExisting(project),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            const Divider(height: 24),
+            Text('新規プロジェクトを作成して追加',
+                style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _newProjectController,
+                    decoration: const InputDecoration(labelText: 'プロジェクト名'),
+                    onSubmitted: (_) => _createAndAdd(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: _busy ? null : _createAndAdd,
+                  child: const Text('作成して追加'),
+                ),
+              ],
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.pop(context),
+          child: const Text('閉じる'),
+        ),
+      ],
+    );
+  }
+}
+
+/// PDF/URL-DOI import flow: DOI/CiNii URL/J-STAGE URL input -> metadata lookup
+/// (DESIGN.md「6.」priority chain) -> confirm/edit form -> write library/{key}/.
 ///
-/// PDF text extraction for automatic DOI detection was evaluated and skipped
-/// for Phase 1c (see the implementation report); the user pastes the DOI or
-/// other identifier manually here.
+/// When [pdfPath] is null (URL/DOI-only import — DESIGN.md「4-1./8.」), the
+/// resulting library entry has no `paper.pdf`; one can be attached later from
+/// the Reader.
 class _ImportDialog extends ConsumerStatefulWidget {
   const _ImportDialog({required this.config, required this.pdfPath});
 
   final VaultConfig config;
-  final String pdfPath;
+  final String? pdfPath;
 
   @override
   ConsumerState<_ImportDialog> createState() => _ImportDialogState();
@@ -270,6 +550,11 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
           children: [
             Text('DOI・CiNii URL・J-STAGE URL を入力してください。',
                 style: Theme.of(context).textTheme.bodySmall),
+            if (widget.pdfPath == null) ...[
+              const SizedBox(height: 4),
+              Text('PDF は後から添付できます。',
+                  style: Theme.of(context).textTheme.bodySmall),
+            ],
             const SizedBox(height: 8),
             TextField(
               controller: _identifierController,
@@ -319,7 +604,7 @@ class _ConfirmMetadataDialog extends ConsumerStatefulWidget {
   });
 
   final VaultConfig config;
-  final String pdfPath;
+  final String? pdfPath;
   final CslMetadata initialMetadata;
   final MetadataSource source;
 
@@ -340,6 +625,7 @@ class _ConfirmMetadataDialogState extends ConsumerState<_ConfirmMetadataDialog> 
   late final TextEditingController _doiController;
   late final TextEditingController _tagsController;
   bool _saving = false;
+  String? _error;
 
   @override
   void initState() {
@@ -375,7 +661,11 @@ class _ConfirmMetadataDialogState extends ConsumerState<_ConfirmMetadataDialog> 
   }
 
   Future<void> _confirm() async {
-    setState(() => _saving = true);
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    final messenger = ScaffoldMessenger.of(context);
     try {
       final year = int.tryParse(_yearController.text.trim());
       final family = _familyController.text.trim();
@@ -421,7 +711,7 @@ class _ConfirmMetadataDialogState extends ConsumerState<_ConfirmMetadataDialog> 
           .toList();
 
       final importer = LibraryImport(widget.config);
-      await importer.importPaper(
+      final paper = await importer.importPaper(
         sourcePdfPath: widget.pdfPath,
         metadata: metadata,
         tags: tags,
@@ -432,6 +722,12 @@ class _ConfirmMetadataDialogState extends ConsumerState<_ConfirmMetadataDialog> 
 
       if (!mounted) return;
       Navigator.of(context).popUntil((route) => route.isFirst);
+      final label = paper.metadata.title?.trim().isNotEmpty == true
+          ? paper.metadata.title!.trim()
+          : paper.effectiveFolderName;
+      messenger.showSnackBar(SnackBar(content: Text('$label をライブラリに追加しました')));
+    } catch (e) {
+      if (mounted) setState(() => _error = '追加に失敗しました: $e');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -508,6 +804,12 @@ class _ConfirmMetadataDialogState extends ConsumerState<_ConfirmMetadataDialog> 
                 controller: _tagsController,
                 decoration: const InputDecoration(labelText: 'タグ（カンマ区切り）'),
               ),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(_error!,
+                      style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                ),
             ]
                 .map((w) => Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/shell_providers.dart';
 import '../providers/vault_providers.dart';
 import 'library_screen.dart';
 import 'reader_screen.dart';
@@ -11,26 +12,26 @@ import 'writer_screen.dart';
 /// NavigationRail. When no vault root is configured, every mode except
 /// Settings shows a prompt to configure one first (Settings is always
 /// reachable so first-run setup is possible).
-class HomeShell extends ConsumerStatefulWidget {
+///
+/// The selected mode lives in [selectedModeProvider] (not local State) so
+/// other screens can navigate here directly — e.g. tapping a paper row in the
+/// Library auto-switches to the Reader (DESIGN.md「4-2.」自動遷移).
+class HomeShell extends ConsumerWidget {
   const HomeShell({super.key});
 
   @override
-  ConsumerState<HomeShell> createState() => _HomeShellState();
-}
-
-class _HomeShellState extends ConsumerState<HomeShell> {
-  int _selected = 0;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final configAsync = ref.watch(vaultConfigProvider);
+    final selected = ref.watch(selectedModeProvider);
 
     return Scaffold(
       body: Row(
         children: [
           NavigationRail(
-            selectedIndex: _selected,
-            onDestinationSelected: (i) => setState(() => _selected = i),
+            selectedIndex: selected.index,
+            onDestinationSelected: (i) => ref
+                .read(selectedModeProvider.notifier)
+                .select(AppMode.values[i]),
             labelType: NavigationRailLabelType.all,
             destinations: const [
               NavigationRailDestination(
@@ -63,18 +64,18 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               error: (e, _) => Center(child: Text('Error: $e')),
               data: (config) {
                 // Settings is always reachable (needed for first-run setup).
-                if (_selected == 3) return const SettingsScreen();
+                if (selected == AppMode.settings) return const SettingsScreen();
                 if (config == null) {
                   return const _NoVaultView();
                 }
-                switch (_selected) {
-                  case 0:
+                switch (selected) {
+                  case AppMode.library:
                     return LibraryScreen(config: config);
-                  case 1:
+                  case AppMode.reader:
                     return ReaderScreen(config: config);
-                  case 2:
+                  case AppMode.writer:
                     return const WriterScreen();
-                  default:
+                  case AppMode.settings:
                     return const SettingsScreen();
                 }
               },
