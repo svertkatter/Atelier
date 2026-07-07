@@ -9,6 +9,8 @@ import '../data/library_import.dart';
 import '../data/vault_config.dart';
 import '../providers/reader_providers.dart';
 import '../providers/vault_providers.dart';
+import 'shell/mode_header.dart';
+import 'theme/app_theme.dart';
 
 /// Reader mode: displays the selected library paper's `paper.pdf`, with a
 /// collapsible sidebar listing every indexed paper (DESIGN.md「4-2.」).
@@ -28,39 +30,62 @@ class ReaderScreen extends ConsumerStatefulWidget {
 class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   bool _sidebarOpen = true;
 
+  /// The open paper's title, resolved from the index for the header subtitle.
+  String? _titleFor(String? folder) {
+    if (folder == null) return null;
+    final rows = ref.watch(papersProvider).value;
+    if (rows == null) return folder;
+    for (final row in rows) {
+      if ((row['id'] ?? '').toString() == folder) {
+        final title = (row['title'] ?? '').toString();
+        return title.isEmpty ? folder : title;
+      }
+    }
+    return folder;
+  }
+
   @override
   Widget build(BuildContext context) {
     final selected = ref.watch(selectedPaperProvider);
+    final scheme = Theme.of(context).colorScheme;
+    final subtitle = _titleFor(selected) ?? '論文を選んでください';
 
-    return Row(
+    return Column(
       children: [
-        if (_sidebarOpen)
-          Container(
-            width: 272,
-            color: Theme.of(context).colorScheme.surfaceContainerLow,
-            child: _PaperSidebar(
-              config: widget.config,
-              selected: selected,
-              onCollapse: () => setState(() => _sidebarOpen = false),
-            ),
-          ),
-        if (_sidebarOpen) const VerticalDivider(width: 1),
+        ModeHeader(
+          title: '読む',
+          subtitle: subtitle,
+          actions: [
+            if (!_sidebarOpen)
+              OutlinedButton.icon(
+                icon: const Icon(Icons.menu_open, size: 18),
+                label: const Text('論文一覧'),
+                onPressed: () => setState(() => _sidebarOpen = true),
+              ),
+          ],
+        ),
+        const Divider(height: 1),
         Expanded(
-          child: Column(
+          child: Row(
             children: [
-              if (!_sidebarOpen)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: IconButton(
-                    tooltip: '論文一覧を表示',
-                    icon: const Icon(Icons.menu_open),
-                    onPressed: () => setState(() => _sidebarOpen = true),
+              if (_sidebarOpen)
+                Container(
+                  width: 272,
+                  color: scheme.surfaceContainerLow,
+                  child: _PaperSidebar(
+                    config: widget.config,
+                    selected: selected,
+                    onCollapse: () => setState(() => _sidebarOpen = false),
                   ),
                 ),
+              if (_sidebarOpen) const VerticalDivider(width: 1),
               Expanded(
-                child: selected == null
-                    ? const _EmptyReaderView()
-                    : _PaperViewer(config: widget.config, folder: selected),
+                child: Container(
+                  color: scheme.surfaceContainerLowest,
+                  child: selected == null
+                      ? const _EmptyReaderView()
+                      : _PaperViewer(config: widget.config, folder: selected),
+                ),
               ),
             ],
           ),
@@ -118,6 +143,7 @@ class _PaperSidebar extends ConsumerWidget {
                 );
               }
               return ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                 itemCount: rows.length,
                 itemBuilder: (context, i) {
                   final row = rows[i];
@@ -126,36 +152,15 @@ class _PaperSidebar extends ConsumerWidget {
                   final author = (row['author'] ?? '').toString();
                   final year = row['year'];
                   final hasPdf = File(config.paperPdfPath(id)).existsSync();
-                  final isSelected = id == selected;
-                  final scheme = Theme.of(context).colorScheme;
-                  return ListTile(
-                    dense: true,
-                    selected: isSelected,
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 12),
-                    leading: Icon(
-                      hasPdf
-                          ? Icons.article_outlined
-                          : Icons.report_gmailerrorred_outlined,
-                      size: 20,
-                      color: hasPdf ? scheme.primary : scheme.error,
-                    ),
-                    title: Text(
-                      title.isEmpty ? id : title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                    subtitle: Text(
-                      [
-                        if (author.isNotEmpty) author,
-                        if (year != null) '($year)',
-                        if (!hasPdf) 'PDFなし',
-                      ].join('  '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 11),
-                    ),
+                  return _SidebarPaperRow(
+                    title: title.isEmpty ? id : title,
+                    meta: [
+                      if (author.isNotEmpty) author,
+                      if (year != null) '($year)',
+                      if (!hasPdf) 'PDFなし',
+                    ].join('  '),
+                    hasPdf: hasPdf,
+                    selected: id == selected,
                     onTap: () =>
                         ref.read(selectedPaperProvider.notifier).select(id),
                   );
@@ -165,6 +170,112 @@ class _PaperSidebar extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// A compact, hover-responsive sidebar row — the library row's light cousin.
+/// Selected rows carry the terracotta left accent used across the shell.
+class _SidebarPaperRow extends StatefulWidget {
+  const _SidebarPaperRow({
+    required this.title,
+    required this.meta,
+    required this.hasPdf,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String title;
+  final String meta;
+  final bool hasPdf;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  State<_SidebarPaperRow> createState() => _SidebarPaperRowState();
+}
+
+class _SidebarPaperRowState extends State<_SidebarPaperRow> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final selected = widget.selected;
+    final bg = selected
+        ? scheme.primaryContainer.withValues(alpha: 0.45)
+        : _hover
+            ? scheme.surfaceContainerHigh
+            : Colors.transparent;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          margin: const EdgeInsets.symmetric(vertical: 2),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Selected accent bar.
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 140),
+                width: 3,
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: selected ? scheme.primary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding:
+                      const EdgeInsets.fromLTRB(9, 9, 10, 9),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontSize: 13,
+                          fontWeight:
+                              selected ? FontWeight.w600 : FontWeight.w500,
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                      if (widget.meta.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.meta,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontSize: 11,
+                            color: widget.hasPdf
+                                ? scheme.onSurfaceVariant
+                                : scheme.error,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -209,9 +320,9 @@ class _PaperViewerState extends ConsumerState<_PaperViewer> {
   Widget build(BuildContext context) {
     final pdfPath = widget.config.paperPdfPath(widget.folder);
     final hasPdf = File(pdfPath).existsSync();
+    final scheme = Theme.of(context).colorScheme;
 
     if (!hasPdf) {
-      final scheme = Theme.of(context).colorScheme;
       return Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 380),
@@ -259,21 +370,29 @@ class _PaperViewerState extends ConsumerState<_PaperViewer> {
 
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        // A thin viewer toolbar: the header already carries the title, so this
+        // stays quiet — just a way back to the empty state.
+        Container(
+          color: scheme.surfaceContainerLow.withValues(alpha: 0.6),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
           child: Row(
             children: [
               IconButton(
-                tooltip: 'ライブラリへ戻る',
+                tooltip: '閉じる',
+                iconSize: 20,
+                visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.close),
                 onPressed: () =>
                     ref.read(selectedPaperProvider.notifier).select(null),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 4),
               Expanded(
                 child: Text(
                   widget.folder,
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        letterSpacing: 0.4,
+                      ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -287,7 +406,9 @@ class _PaperViewerState extends ConsumerState<_PaperViewer> {
             // Key forces a fresh viewer (and controller) when the selected
             // paper changes, so page position/zoom don't leak across papers.
             key: ValueKey(pdfPath),
-            params: const PdfViewerParams(),
+            params: PdfViewerParams(
+              backgroundColor: scheme.surfaceContainerLowest,
+            ),
           ),
         ),
       ],
@@ -302,6 +423,7 @@ class _EmptyReaderView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final type = theme.extension<AtelierType>()!;
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 360),
@@ -312,12 +434,11 @@ class _EmptyReaderView extends StatelessWidget {
             children: [
               Icon(Icons.menu_book_outlined,
                   size: 52, color: scheme.onSurfaceVariant),
-              const SizedBox(height: 16),
-              Text('論文を選んでください',
-                  style: theme.textTheme.titleMedium),
-              const SizedBox(height: 6),
+              const SizedBox(height: 18),
+              Text('論文を選んでください', style: type.displaySmall),
+              const SizedBox(height: 8),
               Text(
-                '左の一覧から論文を選択すると、ここに PDF が表示されます。',
+                '左の一覧から論文を選ぶと、ここに PDF が開きます。',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium
                     ?.copyWith(color: scheme.onSurfaceVariant),

@@ -19,6 +19,8 @@ import '../providers/settings_providers.dart';
 import '../providers/shell_providers.dart';
 import '../providers/vault_providers.dart';
 import '../providers/writer_providers.dart';
+import 'shell/mode_header.dart';
+import 'theme/app_theme.dart';
 
 /// Library mode: paper list (search), PDF/URL-DOI import flows, delete,
 /// "add to project", and manual metadata editing.
@@ -49,129 +51,157 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         const Duration(milliseconds: 200), () => setState(() => _query = value));
   }
 
-  Future<void> _startPdfImport() async {
-    final result = await FilePicker.platform.pickFiles(
-      dialogTitle: 'PDF を選択',
-      type: FileType.custom,
-      allowedExtensions: ['pdf'],
-    );
-    if (result == null || result.files.isEmpty) return;
-    final path = result.files.single.path;
-    if (path == null) return;
-    if (!mounted) return;
-
-    await showDialog<void>(
-      context: context,
-      builder: (context) => _ImportDialog(config: widget.config, pdfPath: path),
-    );
-    ref.invalidate(vaultScanProvider);
-    ref.invalidate(papersProvider);
-  }
+  Future<void> _startPdfImport() =>
+      startPdfImport(context, ref, widget.config);
 
   /// URL/DOI-only import (DESIGN.md「4-1./8.」): no PDF is required up front;
   /// a PDF can be attached later from the Reader.
-  Future<void> _startUrlImport() async {
-    await showDialog<void>(
-      context: context,
-      builder: (context) => _ImportDialog(config: widget.config, pdfPath: null),
-    );
-    ref.invalidate(vaultScanProvider);
-    ref.invalidate(papersProvider);
-  }
+  Future<void> _startUrlImport() =>
+      startUrlImport(context, ref, widget.config);
 
   @override
   Widget build(BuildContext context) {
     final papersAsync = ref.watch(papersProvider);
+    final scheme = Theme.of(context).colorScheme;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 24, 28, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('ライブラリ',
-                        style: Theme.of(context).textTheme.headlineSmall),
-                    const SizedBox(height: 2),
-                    Text(
-                      '論文を管理し、読み、引用します。',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ModeHeader(
+          title: '整える',
+          subtitle: 'ライブラリ — 論文の保管と整理',
+          actions: [
+            OutlinedButton.icon(
+              icon: const Icon(Icons.link, size: 18),
+              label: const Text('URL/DOI'),
+              onPressed: _startUrlImport,
+            ),
+            const SizedBox(width: 8),
+            FilledButton.icon(
+              icon: const Icon(Icons.upload_file, size: 18),
+              label: const Text('PDF をインポート'),
+              onPressed: _startPdfImport,
+            ),
+          ],
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(28, 0, 28, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // A light, borderless search — an icon and a fill, nothing more.
+                TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    hintText: 'タイトル・著者・タグで検索',
+                    fillColor: scheme.surfaceContainerLow,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: scheme.primary, width: 1.4),
                     ),
-                  ],
+                  ),
+                  onChanged: _onSearchChanged,
                 ),
-              ),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.link, size: 18),
-                label: const Text('URL/DOI'),
-                onPressed: _startUrlImport,
-              ),
-              const SizedBox(width: 8),
-              FilledButton.icon(
-                icon: const Icon(Icons.upload_file, size: 18),
-                label: const Text('PDF をインポート'),
-                onPressed: _startPdfImport,
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          TextField(
-            controller: _searchController,
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search),
-              hintText: 'タイトル・著者・タグで検索',
-            ),
-            onChanged: _onSearchChanged,
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: papersAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('読み込み失敗: $e')),
-              data: (allPapers) {
-                final index = ref.watch(vaultIndexProvider).value;
-                if (_query.trim().isEmpty || index == null) {
-                  return _PaperList(rows: allPapers, config: widget.config, ref: ref);
-                }
-                return FutureBuilder<List<Map<String, Object?>>>(
-                  future: index.searchPapers(_query.trim()),
-                  builder: (context, snapshot) {
-                    final rows = snapshot.data ?? const <Map<String, Object?>>[];
-                    return _PaperList(rows: rows, config: widget.config, ref: ref);
-                  },
-                );
-              },
+                const SizedBox(height: 14),
+                Expanded(
+                  child: papersAsync.when(
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    error: (e, _) => Center(child: Text('読み込み失敗: $e')),
+                    data: (allPapers) {
+                      final index = ref.watch(vaultIndexProvider).value;
+                      if (_query.trim().isEmpty || index == null) {
+                        return _PaperList(
+                          rows: allPapers,
+                          config: widget.config,
+                          ref: ref,
+                          onImport: _startPdfImport,
+                        );
+                      }
+                      return FutureBuilder<List<Map<String, Object?>>>(
+                        future: index.searchPapers(_query.trim()),
+                        builder: (context, snapshot) {
+                          final rows =
+                              snapshot.data ?? const <Map<String, Object?>>[];
+                          return _PaperList(
+                            rows: rows,
+                            config: widget.config,
+                            ref: ref,
+                            onImport: _startPdfImport,
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
+/// Starts the PDF import flow (file picker → metadata lookup → confirm). Shared
+/// by the Library screen and the command palette so both reach the same dialog.
+Future<void> startPdfImport(
+    BuildContext context, WidgetRef ref, VaultConfig config) async {
+  final result = await FilePicker.platform.pickFiles(
+    dialogTitle: 'PDF を選択',
+    type: FileType.custom,
+    allowedExtensions: ['pdf'],
+  );
+  if (result == null || result.files.isEmpty) return;
+  final path = result.files.single.path;
+  if (path == null) return;
+  if (!context.mounted) return;
+
+  await showDialog<void>(
+    context: context,
+    builder: (context) => _ImportDialog(config: config, pdfPath: path),
+  );
+  ref.invalidate(vaultScanProvider);
+  ref.invalidate(papersProvider);
+}
+
+/// Starts the URL/DOI-only import flow (no PDF up front — DESIGN.md「4-1./8.」).
+Future<void> startUrlImport(
+    BuildContext context, WidgetRef ref, VaultConfig config) async {
+  await showDialog<void>(
+    context: context,
+    builder: (context) => _ImportDialog(config: config, pdfPath: null),
+  );
+  ref.invalidate(vaultScanProvider);
+  ref.invalidate(papersProvider);
+}
+
 class _PaperList extends StatelessWidget {
-  const _PaperList({required this.rows, required this.config, required this.ref});
+  const _PaperList({
+    required this.rows,
+    required this.config,
+    required this.ref,
+    required this.onImport,
+  });
 
   final List<Map<String, Object?>> rows;
   final VaultConfig config;
   final WidgetRef ref;
+  final VoidCallback onImport;
 
   @override
   Widget build(BuildContext context) {
     if (rows.isEmpty) {
-      return _EmptyLibraryView(config: config);
+      return _EmptyLibraryView(onImport: onImport);
     }
     return ListView.separated(
       itemCount: rows.length,
       separatorBuilder: (_, _) =>
-          const Divider(height: 1, indent: 52, endIndent: 4),
+          const Divider(height: 1, indent: 8, endIndent: 8),
       itemBuilder: (context, i) {
         final row = rows[i];
         final id = (row['id'] ?? '').toString();
@@ -261,9 +291,10 @@ class _PaperList extends StatelessWidget {
   }
 }
 
-/// A single library entry row: PDF-status icon, title, author/year meta, and
-/// tag chips, with an overflow action menu. Tapping opens it in the Reader.
-class _PaperRow extends StatelessWidget {
+/// A single library entry row. Hovering lifts the background and cross-fades
+/// the editorial year (mincho) into the row's actions — add-to-project, edit,
+/// delete — which only surface on hover. Tapping the row opens it in the Reader.
+class _PaperRow extends StatefulWidget {
   const _PaperRow({
     required this.id,
     required this.title,
@@ -285,134 +316,216 @@ class _PaperRow extends StatelessWidget {
   final ValueChanged<String> onAction;
 
   @override
+  State<_PaperRow> createState() => _PaperRowState();
+}
+
+class _PaperRowState extends State<_PaperRow> {
+  bool _hover = false;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final type = theme.extension<AtelierType>()!;
+    final year = widget.year;
     final meta = [
-      if (author.isNotEmpty) author,
-      if (year != null) '$year',
-    ].join('・');
+      if (widget.author.isNotEmpty) widget.author,
+      if (widget.hasPdf == false) 'PDFなし',
+    ];
 
-    return InkWell(
-      onTap: onOpen,
-      borderRadius: BorderRadius.circular(10),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 2, right: 12),
-              child: Icon(
-                hasPdf
-                    ? Icons.article_outlined
-                    : Icons.report_gmailerrorred_outlined,
-                size: 22,
-                color: hasPdf ? scheme.primary : scheme.error,
-              ),
-            ),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: theme.textTheme.bodyLarge
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (meta.isNotEmpty) ...[
-                    const SizedBox(height: 2),
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onOpen,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          decoration: BoxDecoration(
+            color: _hover ? scheme.surfaceContainerHigh : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      meta,
-                      style: theme.textTheme.bodyMedium
-                          ?.copyWith(color: scheme.onSurfaceVariant),
-                      maxLines: 1,
+                      widget.title,
+                      style: theme.textTheme.titleMedium,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (meta.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        meta.join('  ·  '),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: widget.hasPdf
+                              ? scheme.onSurfaceVariant
+                              : scheme.error,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    if (widget.tags.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          for (final tag in widget.tags) _TagChip(label: tag),
+                        ],
+                      ),
+                    ],
                   ],
-                  if (tags.isNotEmpty || !hasPdf) ...[
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        if (!hasPdf)
-                          _MiniChip(
-                            label: 'PDFなし',
-                            color: scheme.error,
-                            background:
-                                scheme.errorContainer.withValues(alpha: 0.5),
-                          ),
-                        for (final tag in tags) _MiniChip(label: tag),
-                      ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              // Right cluster: the editorial year gives way to the row actions
+              // on hover — no reflow, just a cross-fade in a fixed gutter.
+              SizedBox(
+                width: 132,
+                height: 40,
+                child: Stack(
+                  alignment: Alignment.centerRight,
+                  children: [
+                    IgnorePointer(
+                      ignoring: _hover,
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 120),
+                        opacity: _hover ? 0 : 1,
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: year == null
+                              ? const SizedBox.shrink()
+                              : Text(
+                                  '$year',
+                                  style: type.displaySmall.copyWith(
+                                    fontSize: 18,
+                                    letterSpacing: 0.5,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                    IgnorePointer(
+                      ignoring: !_hover,
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 120),
+                        opacity: _hover ? 1 : 0,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            _RowAction(
+                              icon: Icons.playlist_add,
+                              tooltip: 'プロジェクトへ追加',
+                              onTap: () => widget.onAction('addProject'),
+                            ),
+                            _RowAction(
+                              icon: Icons.edit_outlined,
+                              tooltip: 'メタデータを編集',
+                              onTap: () => widget.onAction('edit'),
+                            ),
+                            _RowAction(
+                              icon: Icons.delete_outline,
+                              tooltip: '削除',
+                              danger: true,
+                              onTap: () => widget.onAction('delete'),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
-                ],
+                ),
               ),
-            ),
-            PopupMenuButton<String>(
-              tooltip: '操作',
-              icon: Icon(Icons.more_horiz, color: scheme.onSurfaceVariant),
-              onSelected: onAction,
-              itemBuilder: (context) => const [
-                PopupMenuItem(value: 'edit', child: Text('メタデータを編集')),
-                PopupMenuItem(value: 'addProject', child: Text('プロジェクトへ追加')),
-                PopupMenuItem(value: 'delete', child: Text('削除')),
-              ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// A small pill used for tags and status flags in the library list.
-class _MiniChip extends StatelessWidget {
-  const _MiniChip({required this.label, this.color, this.background});
+/// A compact hover-revealed row action icon.
+class _RowAction extends StatelessWidget {
+  const _RowAction({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    this.danger = false,
+  });
 
-  final String label;
-  final Color? color;
-  final Color? background;
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  final bool danger;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final fg = color ?? scheme.onSurfaceVariant;
+    return IconButton(
+      tooltip: tooltip,
+      icon: Icon(icon, size: 18),
+      color: danger ? scheme.error : scheme.onSurfaceVariant,
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+      padding: EdgeInsets.zero,
+      onPressed: onTap,
+    );
+  }
+}
+
+/// A light text tag (`#tag`) — lighter than a Material [Chip]: a tinted fill,
+/// no border, muted ink.
+class _TagChip extends StatelessWidget {
+  const _TagChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: background ?? scheme.surfaceContainerHighest,
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: scheme.outlineVariant),
       ),
       child: Text(
-        label,
+        '#$label',
         style: Theme.of(context)
             .textTheme
             .labelSmall
-            ?.copyWith(color: fg, fontWeight: FontWeight.w500),
+            ?.copyWith(color: scheme.onSurfaceVariant),
       ),
     );
   }
 }
 
-/// Shown when the library has no entries: an inviting icon, guidance, and the
+/// Shown when the library has no entries: a mincho heading, guidance, and the
 /// primary import action.
 class _EmptyLibraryView extends StatelessWidget {
-  const _EmptyLibraryView({required this.config});
+  const _EmptyLibraryView({required this.onImport});
 
-  final VaultConfig config;
+  final VoidCallback onImport;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final type = theme.extension<AtelierType>()!;
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 400),
+        constraints: const BoxConstraints(maxWidth: 420),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -426,15 +539,20 @@ class _EmptyLibraryView extends StatelessWidget {
               child: Icon(Icons.local_library_outlined,
                   size: 44, color: scheme.primary),
             ),
-            const SizedBox(height: 20),
-            Text('ライブラリは空です',
-                style: theme.textTheme.titleMedium),
-            const SizedBox(height: 6),
+            const SizedBox(height: 24),
+            Text('まだ論文がありません', style: type.displaySmall),
+            const SizedBox(height: 8),
             Text(
-              '上の「PDF をインポート」または「URL/DOI」から\n最初の論文を追加しましょう。',
+              '「PDF をインポート」または「URL/DOI」から\n最初の論文を迎え入れましょう。',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium
                   ?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              icon: const Icon(Icons.upload_file, size: 18),
+              label: const Text('PDF をインポート'),
+              onPressed: onImport,
             ),
           ],
         ),

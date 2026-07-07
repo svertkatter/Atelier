@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/app_settings.dart';
 import '../providers/settings_providers.dart';
 import '../providers/vault_providers.dart';
+import 'shell/mode_header.dart';
+import 'theme/app_theme.dart';
 import 'theme/theme_toggle.dart';
 
 /// Settings screen: vault root folder, pandoc path, CrossRef contact email,
@@ -42,22 +44,21 @@ class SettingsScreen extends ConsumerWidget {
     return Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 720),
-        child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
+        constraints: const BoxConstraints(maxWidth: 640),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('設定', style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 4),
-            Text(
-              'Atelier の外観と外部ツールを設定します。',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+            const ModeHeader(
+              title: '設定',
+              subtitle: 'Atelier の外観と外部ツールを整えます',
+              small: true,
             ),
-            const SizedBox(height: 28),
-
-            // ---- Appearance ----
-            _Section(
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(28, 4, 28, 28),
+                children: [
+                  // ---- Appearance ----
+                  _Section(
               title: '外観',
               icon: Icons.palette_outlined,
               description: 'テーマはシステム設定に追従、またはライト／ダークに固定できます。',
@@ -133,6 +134,9 @@ class SettingsScreen extends ConsumerWidget {
                 data: (settings) => _MetadataSettingsForm(settings: settings),
               ),
             ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -167,8 +171,9 @@ class _Section extends StatelessWidget {
           Row(
             children: [
               Icon(icon, size: 20, color: scheme.primary),
-              const SizedBox(width: 8),
-              Text(title, style: theme.textTheme.titleMedium),
+              const SizedBox(width: 10),
+              Text(title,
+                  style: theme.extension<AtelierType>()!.displaySmall),
             ],
           ),
           if (description != null) ...[
